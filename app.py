@@ -12,7 +12,7 @@ def get_db_connection():
     try:
         conn = pyodbc.connect(
             'DRIVER={ODBC Driver 17 for SQL Server};'
-            'SERVER=MUHAMMAD-HAMZA-;'  # Change if needed
+            'SERVER=MUHAMMAD-HAMZA-;'  # Replace with your server name if needed
             'DATABASE=Matrix1;'
             'Trusted_Connection=yes;'
             'Connection Timeout=30;'
@@ -27,7 +27,7 @@ def get_db_connection():
 def home():
     return "Donation API is running!"
 
-# Endpoint to handle donation form submission
+# Donation submission endpoint
 @app.route('/api/donations', methods=['POST', 'OPTIONS'])
 def handle_donations():
     if request.method == 'OPTIONS':
@@ -43,71 +43,73 @@ def handle_donations():
 
         data = request.get_json()
 
-        # Validate required fields
+        # Required fields validation
         required_fields = ['BpName', 'ContactNumber', 'UserRole', 'DonationType']
-        missing_fields = [field for field in required_fields if field not in data or not data[field]]
+        missing_fields = [field for field in required_fields if not data.get(field)]
         if missing_fields:
             return jsonify({'error': f'Missing required fields: {", ".join(missing_fields)}'}), 400
+
+        # Parse donation date or set current date
+        try:
+            donation_date = datetime.strptime(data.get('DonationDate', ''), '%Y-%m-%d')
+        except (ValueError, TypeError):
+            donation_date = datetime.now()
 
         # Insert into the database
         with get_db_connection() as conn:
             cursor = conn.cursor()
 
             sql = """
-        INSERT INTO DonationEntry (
-            BpType, BpName, Cnic, ContactNumber, Email, Address, Country, City,
-            UserRole, DonationPurpose, ProjectId, DonationType, Amount,
-            MaterialId, Quantity, MaterialAmount, ServiceId, ServiceHours,
-            PaymentMethod, PaymentReference, DonationDate, Notes,
-            IsActive, CreatedOn, ModifiedOn, CreatedBy, ModifiedBy
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """
+                INSERT INTO DonationEntry (
+                    BpType, BpName, Cnic, ContactNumber, Email, Address, Country, City,
+                    UserRole, DonationPurpose, ProjectId, DonationType, Amount,
+                    MaterialId, Quantity, MaterialAmount, ServiceId, ServiceHours,
+                    PaymentMethod, PaymentReference, DonationDate, Notes,
+                    IsActive, CreatedOn, ModifiedOn, CreatedBy, ModifiedBy
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
 
-        current_time = datetime.now()
-        donation_date = data.get('donationDate', current_time.strftime('%Y-%m-%d'))
+            values = (
+                data.get('BpType'),
+                data.get('BpName'),
+                data.get('Cnic'),
+                data.get('ContactNumber'),
+                data.get('Email'),
+                data.get('Address'),
+                data.get('Country'),
+                data.get('City'),
+                data.get('UserRole'),
+                data.get('DonationPurpose'),
+                data.get('ProjectId'),
+                data.get('DonationType'),
+                float(data['Amount']) if data.get('Amount') else None,
+                data.get('MaterialId'),
+                int(data['Quantity']) if data.get('Quantity') else None,
+                float(data['MaterialAmount']) if data.get('MaterialAmount') else None,
+                data.get('ServiceId'),
+                float(data['ServiceHours']) if data.get('ServiceHours') else None,
+                data.get('PaymentMethod'),
+                data.get('PaymentReference'),
+                donation_date,
+                data.get('Notes'),
+                1,  # IsActive
+                datetime.now(),  # CreatedOn
+                datetime.now(),  # ModifiedOn
+                'system',  # CreatedBy
+                'system'   # ModifiedBy
+            )
 
-        values = (
-    data.get('BpType'),
-    data.get('BpName'),
-    data.get('Cnic'),
-    data.get('ContactNumber'),
-    data.get('Email'),
-    data.get('Address'),
-    data.get('Country'),
-    data.get('City'),
-    data.get('UserRole'),
-    data.get('DonationPurpose'),
-    data.get('ProjectId'),
-    data.get('DonationType'),
-    data.get('Amount'),
-    data.get('MaterialId'),
-    data.get('Quantity'),
-    data.get('MaterialAmount'),
-    data.get('ServiceId'),
-    data.get('ServiceHours'),
-    data.get('PaymentMethod'),
-    data.get('PaymentReference'),
-    data.get('DonationDate'),
-    data.get('Notes'),
-    1,               # IsActive
-    datetime.now(),  # CreatedOn
-    datetime.now(),  # ModifiedOn
-    'system',        # CreatedBy
-    'system'         # ModifiedBy
-)
+            cursor.execute(sql, values)
+            conn.commit()
 
+            cursor.execute("SELECT SCOPE_IDENTITY()")
+            donation_id = cursor.fetchone()[0]
 
-        cursor.execute(sql, values)
-        conn.commit()
-
-        cursor.execute("SELECT SCOPE_IDENTITY()")
-        donation_id = cursor.fetchone()[0]
-
-        return jsonify({
-            'success': True,
-            'message': 'Donation recorded successfully',
-            'donationId': donation_id
-        }), 201
+            return jsonify({
+                'success': True,
+                'message': 'Donation recorded successfully',
+                'donationId': donation_id
+            }), 201
 
     except pyodbc.Error as e:
         return jsonify({'error': f'Database error: {str(e)}'}), 500
@@ -116,6 +118,6 @@ def handle_donations():
         traceback.print_exc()
         return jsonify({'error': f'Server error: {str(e)}'}), 500
 
-# Start the Flask app
+# Run the app
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=True)
